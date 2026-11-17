@@ -1,4 +1,4 @@
-# Carrie AR Business Card — V2
+# Carrie AR Business Card — V2.1
 
 One static, self-contained dual-sided WebAR website for **https://ar.carrieqian.com**. No build step, CDN, backend, iframe or deployment automation. Extract the ZIP and upload its **contents**, not the enclosing folder. See DEPLOY_CHECKLIST.md.
 
@@ -12,8 +12,8 @@ For a phone, use the existing HTTPS GitHub Pages domain after manually uploading
 
 1. Press **Start AR Experience**, allow the rear camera, and show either complete card side.
 2. Front (index 0): the original portfolio video occupies the same centered **1 × 11/17** plane. Playback starts muted; the lower-left speaker toggles its original audio without seeking. Tracking loss pauses it; reacquisition resumes its playhead.
-3. On actual media `ended`, the flip prompt appears for 8.5 seconds and the video repeats. Native `loop` is deliberately disabled because it suppresses `ended`. Losing tracking never creates a completion. Back detection hides the prompt.
-4. Back (index 1): original transparent pixel sprites hinge upward from their bottom edges, then the laptop, camera and creative graphics enter at distinct depths. The sequence settles at 3.2 seconds. A brief loss under 1.2 seconds resumes; a longer loss or switching back from the front replays it.
+3. On actual media `ended`, once per session, the flip prompt appears for up to 10 seconds when free screen space is available and the video repeats. Native `loop` is deliberately disabled because it suppresses `ended`. Losing tracking never creates a completion. Back detection hides the prompt. It appears at most once per AR session and is suppressed if both sides have already been explored.
+4. Back (index 1): original transparent pixel sprites hinge upward from their bottom edges, then the laptop, camera and creative graphics enter at distinct depths. The sequence settles at 3.2 seconds. A brief loss under 1.2 seconds resumes; a longer loss or switching back from the front replays it. After the full entrance, a once-per-session prompt invites back-first visitors to flip to the front. Neither prompt appears during loss or repeats after both sides are visited.
 5. Tap the front video or **Explore Portfolio** to open carrieqian.com in a new tab. Sound and Home are separate controls. Home stops the camera and returns here. Switching tabs pauses capture; use **Restart camera** on return. A rejected media play shows **Resume video**.
 
 ## Files
@@ -43,9 +43,9 @@ VALIDATION.md
 
 ## Coordinate alignment and real parallax
 
-The card is 85 × 55 mm. Printed Carrie bounds are x326–658 / y282–985; cat x603–864 / y730–985 in the final back PNG. Their bottom hinges are mapped to those printed feet, preserving each transparent sprite's aspect ratio. The popup uses local X across the card, Z toward its lower edge and +Y upward. Its root rotates +90° about X and scales by 1/0.085 to MindAR's unit-card-width image anchor.
+The card is 85 × 55 mm. Printed Carrie bounds are x326–658 / y282–985; cat x603–864 / y730–985 in the final back PNG. Their bottom hinges are mapped to those printed feet, preserving each transparent sprite's aspect ratio. The stored layout uses X across the card, Z toward its lower edge and Y as lift; these are layout inputs, not the returned scene axes. The new unrotated root scales by 1/0.085. Positions map directly to MindAR image coordinates (x, -z, y). Every cutout, not the whole layout, rotates about its bottom-edge X hinge toward +anchor Z. This keeps the measured feet fixed. At each entrance the view is measured once in anchor coordinates to choose a readable 20–75° outward rest tilt; it stays fixed while exploring, preserving parallax. A frontal vertical target uses about 45°, while a horizontal card viewed from its lower edge can stand more upright.
 
-Nine separate textured Three.js planes at different positions produce spatial occlusion and parallax; the planes do not billboard toward the camera. There is no opaque virtual card, floor, OrbitControls or preview scenery. Nearest-neighbor sampling preserves original pixels. The physical printed characters remain visible in the live camera image as the paper cutouts rise: this prototype does not erase real print. Upright paper layers appear thin when viewed directly along their edges, and their backs mirror the artwork. View the card at a moderate tilt.
+Nine separate textured Three.js planes at different positions produce spatial occlusion and parallax; the planes do not billboard toward the camera. There is no opaque virtual card, floor, OrbitControls or preview scenery. Nearest-neighbor sampling preserves original pixels. The physical printed characters remain visible in the live camera image as the paper cutouts rise: this prototype does not erase real print. Paper layers can still appear thin at extreme edge views, and their backs mirror the artwork. The acquisition-time lean improves normal vertical/horizontal viewing but is intentionally not a camera-facing billboard. View the card at a moderate angle. Prompts occupy only free screen space above or below projected artwork; if the whole view is occupied, move back slightly so pending guidance can appear.
 
 ## Recognition and limitations
 

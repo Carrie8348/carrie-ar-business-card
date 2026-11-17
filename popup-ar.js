@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
-// Dimensions are meters. X: card width, Z: card depth, +Y: up from the card.
+// Legacy layout inputs are meters: X across, Z toward printed bottom, Y outward.
+// The returned scene uses MindAR target coordinates: X right, Y top, Z outward.
 export const CARD = Object.freeze({ width: 0.085, depth: 0.055, thickness: 0.0006 });
 export const DURATION = 3.2;
 const hingeAxis = new THREE.Vector3(1, 0, 0);
@@ -22,7 +23,8 @@ export async function createPopupScene() {
   if (!response.ok) throw new Error('Back layout could not load');
   const layout = await response.json();
   const group = new THREE.Group();
-  group.name = 'Carrie_Pixel_Popup_AR_V2';
+  group.name = 'Carrie_Pixel_Popup_AR_V2_1';
+  let restTilt = Math.PI / 4, viewLocked = false, currentTime = 0;
   const elements = {}, textures = [];
   const loader = new THREE.TextureLoader();
   const files = ['carrie', 'cat', 'carrie_accent', 'cat_accent', 'laptop', 'camera', 'design_palette', 'code_window', 'film_strip'];
@@ -53,14 +55,16 @@ export async function createPopupScene() {
     plane.castShadow = false;
     const pivot = new THREE.Group();
     pivot.name = `${name}_Bottom_Hinge`;
-    pivot.position.set(x, y, z);
+    // MindAR anchor: X right, Y printed top, +Z outward. Keep all feet
+    // in the image plane; rotate only the cutout at its own bottom edge.
+    pivot.position.set(x, -z, y);
     pivot.add(plane); group.add(pivot);
-    const entry = { pivot, plane, material, width, height, final: new THREE.Vector3(x, y, z), image };
+    const entry = { pivot, plane, material, width, height, final: pivot.position.clone(), image, attached: false };
     elements[name] = entry;
     return entry;
   }
 
-  // Original sprites use the SAME world-space pixel pitch, preserving their relative proportions.
+  // Source proportions are preserved; measured printed bounds override these defaults.
   const pixel = .041 / 329;
   const carrie = cutout('Carrie', 'carrie', 329 * pixel, -.007, .014);
   const cat = cutout('Cat', 'cat', 119 * pixel, .012, .019);
@@ -76,7 +80,7 @@ export async function createPopupScene() {
       (characterBounds[3] - accentBounds[3]) * pixel,
       .000015
     );
-    a.final.copy(a.pivot.position);
+    a.final.copy(a.pivot.position); a.attached = true;
     return a;
   }
   sourceAccent(carrie, 'CarrieAccent', 'carrie_accent', [35, 16, 190, 345], [179, 114, 222, 166]);
@@ -89,8 +93,13 @@ export async function createPopupScene() {
 
   function setTime(seconds) {
     const time = clamp(Number.isFinite(seconds) ? seconds : 0, 0, DURATION);
-    carrie.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, -Math.PI / 2], [.18, -Math.PI / 2], [1.30, .035], [1.55, 0]], time));
-    cat.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, -Math.PI / 2], [.50, -Math.PI / 2], [1.70, .025], [1.95, 0]], time));
+    currentTime = time;
+    // Flat is 0 in the IMAGE plane. The entrance rises toward +anchor Z.
+    for (const entry of Object.values(elements)) {
+      if (!entry.attached) entry.pivot.quaternion.setFromAxisAngle(hingeAxis, restTilt);
+    }
+    carrie.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, 0], [.18, 0], [1.30, restTilt + .025], [1.55, restTilt]], time));
+    cat.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, 0], [.50, 0], [1.70, restTilt + .018], [1.95, restTilt]], time));
     carrie.material.opacity = cat.material.opacity = 1;
     elements.CarrieAccent.material.opacity = elements.CatAccent.material.opacity = 1;
     for (const [name, sign, start, arrival, end] of [
@@ -117,6 +126,20 @@ export async function createPopupScene() {
   setTime(0);
   return {
     group, elements, duration: DURATION, setTime,
+    resetPresentation() { viewLocked = false; },
+    prepareView(camera, anchor) {
+      if (viewLocked) return;
+      anchor.updateWorldMatrix(true, false);
+      // Express the camera in target coordinates, not world/gravity coordinates.
+      const eye = anchor.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
+      const approach = Math.atan2(-eye.y, Math.max(eye.z, .0001));
+      // An exact 90-degree stand is edge-on for a frontal vertical target.
+      // Set a readable paper lean ONCE per entrance, not a camera-facing billboard.
+      restTilt = THREE.MathUtils.clamp(approach + Math.PI / 4, Math.PI / 9, 5 * Math.PI / 12);
+      viewLocked = true; setTime(currentTime);
+    },
+    get restTilt() { return restTilt; },
+
     dispose() {
       group.traverse(o => { o.geometry?.dispose(); if (o.material) o.material.dispose(); });
       textures.forEach(t => t.dispose());

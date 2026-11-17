@@ -1,11 +1,11 @@
-import {createPopupScene, CARD} from './popup-ar.js?v=2';
-import {createExperience} from './experience.js?v=2';
+import {createPopupScene, CARD} from './popup-ar.js?v=2.1';
+import {createExperience} from './experience.js?v=2.1';
 const $ = id => document.getElementById(id);
 const video = $('portfolio-video'), start = $('start'), restart = $('restart'), sound = $('sound');
-const TARGETS = './assets/targets.mind?v=2';
+const TARGETS = './assets/targets.mind?v=2.1';
 let ar, frontMesh, popup, experience, anchors = [], stream;
 let active = false, desired = false, busy = false, generation = 0, latestFound = 0;
-let queue = Promise.resolve(), frameActive = false, frameDone, hintTimer, lastFrame = 0;
+let queue = Promise.resolve(), frameActive = false, frameDone, hintTimer, lastFrame = 0, newGuidanceSession = true;
 const message = text => { $('camera-message').textContent = text; };
 const announce = text => { $('tracking-status').textContent = text; };
 function soundLabel() {
@@ -29,6 +29,33 @@ function syncTargets() {
   const side = front && back ? latestFound : back ? 1 : front ? 0 : -1;
   experience.selectSide(side);
 }
+
+function placePrompt() {
+  const overlay = $('flip-prompt'), canvas = ar.renderer.domElement;
+  const r = canvas.getBoundingClientRect();
+  ar.scene.updateMatrixWorld(true); ar.camera.updateMatrixWorld(true);
+  let minY = Infinity, maxY = -Infinity;
+  const meshes = experience.side === 0 ? [frontMesh] : Object.values(popup.elements).filter(e=>e.pivot.visible && e.material.opacity > .01).map(e=>e.plane);
+  for (const mesh of meshes) {
+    mesh.geometry.computeBoundingBox(); const box = mesh.geometry.boundingBox;
+    for (const x of [box.min.x,box.max.x]) for (const y of [box.min.y,box.max.y]) {
+      const v = mesh.position.clone().set(x,y,0).applyMatrix4(mesh.matrixWorld).project(ar.camera);
+      const sy = r.top + (1-v.y)*r.height/2;
+      minY = Math.min(minY,sy); maxY = Math.max(maxY,sy);
+    }
+  }
+  const lower = document.querySelector('.bottom-controls').getBoundingClientRect().top - 14;
+  const upper = Math.max($('home').getBoundingClientRect().bottom,$('camera-message').getBoundingClientRect().bottom) + 12;
+  const wasHidden=overlay.hidden; overlay.hidden=false;
+  const height=overlay.getBoundingClientRect().height; overlay.hidden=wasHidden;
+  const topSpace=Math.min(lower,minY-12)-upper;
+  const bottomTop=Math.max(upper,maxY+12);
+  const top = topSpace >= height ? upper : lower-bottomTop >= height ? lower-height : null;
+  if (top === null || !Number.isFinite(top)) return false;
+  overlay.style.top = `${top}px`;
+  return true;
+}
+
 function serial(task) {
   queue = queue.then(task).catch(e => {
     console.error(e); active = false; experience?.setSessionActive(false);
@@ -100,11 +127,12 @@ async function setup() {
   frontMesh.name = 'Front_Portfolio_Video'; frontMesh.visible = false;
   anchors = [ar.addAnchor(0),ar.addAnchor(1)]; anchors[0].group.add(frontMesh);
   popup = backPopup;
-  popup.group.rotation.x = Math.PI / 2;
+  // Popup positions are already in MindAR target XY / outward Z.
+  popup.group.rotation.x = 0;
   popup.group.scale.setScalar(1 / CARD.width);
   popup.group.visible = false;
   anchors[1].group.add(popup.group);
-  experience = createExperience({video,frontMesh,popup,flip:$('flip-prompt'),resumeButton:$('resume'),announce});
+  experience = createExperience({video,frontMesh,popup,flip:$('flip-prompt'),resumeButton:$('resume'),announce,placePrompt});
   anchors.forEach((a,index)=>{
     a.onTargetFound = ()=>{latestFound=index;syncTargets();};
     a.onTargetLost = syncTargets; a.onTargetUpdate = syncTargets;
@@ -129,6 +157,7 @@ async function startSession(token) {
   busy=true;start.disabled=restart.disabled=true;message('Preparing your camera…');
   try {
     await setup();
+    if (newGuidanceSession) { experience.beginSession(); newGuidanceSession = false; }
     if (!desired || token!==generation || document.hidden) return;
     const next = await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
     if (!desired || token!==generation || document.hidden) {next.getTracks().forEach(t=>t.stop());return;}
@@ -160,7 +189,9 @@ async function startSession(token) {
     active=true;experience.setSessionActive(true);restart.hidden=true;lastFrame=performance.now();
     ar.renderer.setAnimationLoop(()=>{
       const now=performance.now(),dt=Math.min((now-lastFrame)/1000,.08);lastFrame=now;
-      syncTargets();experience.update(dt);ar.renderer.render(ar.scene,ar.camera);
+      syncTargets();
+      if (experience.side === 1) popup.prepareView(ar.camera, anchors[1].group);
+      experience.update(dt);ar.renderer.render(ar.scene,ar.camera);
     });
     message('Both sides have a little magic.');
     clearTimeout(hintTimer);hintTimer=setTimeout(()=>{if(active)message('');},4500);
@@ -171,11 +202,12 @@ async function startSession(token) {
     if(token===generation){desired=false;cameraUI(false);$('landing-error').textContent=errorText(e);start.textContent='Try again';}
   } finally {busy=false;start.disabled=restart.disabled=false;}
 }
-function requestStart() {
+function requestStart(freshSession = true) {
   if (desired && (active || busy)) return;
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.WebGLRenderingContext) {
     $('landing-error').textContent='AR requires HTTPS and a camera-enabled Safari or Chrome browser.';return;
   }
+  if (freshSession) newGuidanceSession = true;
   desired=true;const token=++generation;$('landing-error').textContent='';cameraUI(true);
   video.muted=true;soundLabel();
   // Unlock media from the user's Start gesture. It remains paused until the front target is visible.
@@ -188,8 +220,8 @@ function suspend(text) {
   ar?.controller?.stopProcessVideo();ar?.renderer.setAnimationLoop(null);
   message(text);restart.hidden=false;
 }
-start.addEventListener('click',requestStart);
-restart.addEventListener('click',()=>{desired=false;requestStart();});
+start.addEventListener('click',()=>requestStart());
+restart.addEventListener('click',()=>{desired=false;requestStart(false);});
 $('home').addEventListener('click',()=>{
   desired=false;++generation;active=false;experience?.setSessionActive(false);video.pause();
   clearTimeout(hintTimer);stream?.getTracks().forEach(t=>t.stop());

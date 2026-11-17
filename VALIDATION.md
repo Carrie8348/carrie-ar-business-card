@@ -1,34 +1,32 @@
-# Validation record — 2026-11-17
+# V2.1 validation — 2026-11-17
 
-## Automated / desktop evidence
+## Root cause and correction
 
-Tested in installed desktop Google Chrome using an actual fake MediaStream containing perspective-transformed copies of the final full PNGs, with blank frames between sides. This exercises MindAR feature matching and tracking, rather than only calling scene events. Test fixtures are not deployed and the source targets were not changed.
+The supplied iPhone screenshot was inspected. Target 1 had recognized successfully. The V2 root transform put paper normals perpendicular to a frontal vertical target view; with a camera above the printed feet, outward character geometry could project downward. This explains the edge-on accessory strips and below-target appearance without blaming the screen or changing image recognition.
 
-- Compiled targets re-imported successfully: exactly **two**, front index 0 / back index 1, both 1530 × 990. File size **779,048 bytes**.
-- Front PNG matches the previously working image byte-for-byte. Back is the exact supplied final PNG. MP4 and all nine popup PNGs match their original source bytes.
-- Existing QR decoded to **https://ar.carrieqian.com**; not regenerated.
-- Synthetic sequence correctly recognized front → lost → back → lost → front → lost → back. Front and back acquired twice each in one session. No simultaneous experiences; lost scenes hidden and video paused.
-- Stock matcher initially misidentified back frames as front due to shared character features. With the documented strongest-valid-match adjustment, the full dual-target regression passed twice.
-- Original front geometry verified: width 1, height 11/17, position [0,0,0]. Starts muted and playing on recognition; speaker unmutes the existing media.
-- Tested a **real HTMLMediaElement completion** by seeking near its end and allowing playback to finish. The genuine ended event showed the flip prompt and restarted playback. Loss did not create a completion. Back recognition hid the prompt.
-- Nine true textured PlaneGeometry objects verified, with separate transforms and bottom hinges. No opaque card/floor boxes. Back root transform and printed-foot positions verified. Desktop camera screenshots inspected.
-- Event-level tests additionally repeated loss/reacquisition five times, verified short-loss continuation and long-loss popup replay. These are simulated state transitions, not five physical-card scans.
-- Three complete Home/Start cycles reused exactly one controller, worker and renderer, two anchors, one camera video and one canvas. Only one live capture track remained. Four rapid alternating Home/Start cycles also passed.
-- Actual desktop input events opened exactly one new tab from the front video and from the Portfolio link. Sound did not navigate. Returning to the AR tab offered Restart, which restored tracking.
-- Simulated camera permission denial returned to the landing with a clear error. Portrait 390 × 844 and landscape 844 × 390 had no horizontal overflow. Lower controls were separate and Start remained visible on the mobile landing.
-- No uncaught JavaScript errors in the completed browser regression. Canvas pointer listeners did not duplicate after restart.
-- JavaScript syntax, explicit local runtime references, required files, original-file preservation, CNAME and archive contents checked before packaging.
+V2.1 converts the existing measured hinge locations into image-anchor XY coordinates and applies outward rotation only to individual bottom-edge hinges. An entrance-time target-local camera measurement selects a readable 20–75° rest tilt, then freezes it. This is a deliberate outward paper lean, not an exactly perpendicular 90° stand and not a continuously camera-facing sprite. All original PNGs, sprite proportions, keyframe order and target mappings remain.
 
-## Asset identity (SHA-256)
+## Desktop / automated testing
 
-| File | SHA-256 |
-| --- | --- |
-| card-front.png | 5afb52397656e66834c502fa489cae087e6ec9c8a3cba36fb837e71784c3b7ee |
-| card-back.png | f4a472bf198a5e9d4dfacaadf5596dc6c6381e28b96aa5d84db9c5005aaad7f2 |
-| portfolio.mp4 | 530b5d2f5293a282cff4dd7da8c76f0a9c0dc609a8924178175290c566c3eaae |
+The tests use desktop Google Chrome, synthetic camera frames and separate projection/state checks. They do **not** constitute physical-device testing.
 
-## Not verified on hardware
+- The real MindAR matcher/tracker recognized a synthetic sequence front → back → front → back, with blank/lost intervals. Two acquisitions of each side in one session; no simultaneous experiences. Video paused and scenes hid on loss.
+- A separate synthetic-camera **back-first** run recognized the frontal back before the front: no prompt during entrance; the exact back-to-front copy appeared after completion, outside the projected artwork and above controls. Switching to front hid it; genuinely completing the front video after both sides were explored did not show another prompt. No browser errors.
+- Separate 3D projection/render tests used a frontal vertical target pose and a horizontal-card viewing pose. Selected rest angles were 45° and 75°. For both Carrie and cat, the bottom hinge had **zero numerical displacement** from its mapped printed foot position; top vertices rose outward in +target Z and upward on screen. The paper faces remained readable rather than edge-on.
+- In both poses, moving the virtual camera sideways changed head-versus-foot projected positions. The selected hinge tilt stayed exactly fixed while the camera moved, confirming spatial parallax rather than billboarding. Rendered front and side views were inspected. The card texture/background used for those isolated test renders is test-only; no virtual base or opaque background was added to runtime AR.
+- Guidance state checks passed: back completion waits for the full entrance; tracking loss cannot finish it; back-first shows the correct copy; front-first still requires genuine video end; prompt hides on loss/opposite recognition; neither direction repeats after both sides; tab-restart preserves history; Home/new Start resets it. Pending guidance waits if no free screen space exists.
+- Actual HTMLMediaElement playback was allowed to finish after a test seek near its end: the front prompt displayed, the unchanged video repeated, and ordinary loss did not count as completion. This complements the event-level prompt tests.
+- Three full Home/Start cycles and four rapid Home/Start cycles retained one renderer, one controller/worker, two anchors, one canvas and one live camera track. No duplicated canvas pointer listeners.
+- Front video and fixed Portfolio link opened one new tab each via desktop input; speaker did not navigate. Returning offered Restart and restored tracking. Simulated permission denial displayed the existing error path.
+- Mobile-size portrait and landscape layouts had no horizontal overflow. Existing landing content and Start visibility remained. The larger front prompt was inspected in a mobile-size screenshot; artwork-aware placement kept it above the video and away from lower controls.
+- No uncaught JavaScript errors in the completed main browser regression.
 
-No iPhone, Android phone or physical card was tested during V2 packaging. Actual Safari media permissions, audibility, printed alignment, tracking under motion/glare, smartphone performance, safe areas under real browser toolbars and production-domain delivery require the manual checklist. Desktop mute state verification does not prove sound through a phone's speaker. Synthetic images have no autofocus, sensor noise, print texture or screen moiré.
+## Preservation and packaging
 
-Recognition quality concerns and paper-plane visual limitations are described in README.md. The matcher fix reduces the observed ambiguity; it cannot certify every partial view. No GitHub repository, deployment, DNS or previous source files were modified.
+Before ZIP creation: all source files in the original V2, V1 and standalone popup folders were checked against pre-edit hashes. All V2.1 assets, video, compiled targets, vendor files, CNAME, .nojekyll and license files are byte-identical to V2. Target count remains two, in the unchanged order front 0 / back 1; the 779,048-byte targets.mind was reused, not regenerated. Landing markup/copy and all CSS outside the prompt block are preserved. Speaker/Portfolio markup and behavior remain unchanged. JavaScript syntax, local paths, required files and ZIP root contents were checked.
+
+## Remaining real-device checks
+
+No new iPhone or Android V2.1 camera test was performed. The user's supplied screenshot is evidence of the prior V2 issue, not a V2.1 pass. Test both journeys on an upright screen and on a horizontal printed card, checking exact printed-foot registration and natural tracking motion. Safari permissions, real speaker output, optical noise/moiré/glare, browser safe areas and performance still require the manual DEPLOY_CHECKLIST.md.
+
+Flat paper layers remain thin if moved to an extreme edge-on view after their entrance angle has locked. A long loss/reacquisition selects a fresh readable angle. Printed artwork naturally remains visible in the camera feed behind lifted layers; this does not erase print. If artwork fills the camera view, guidance waits for a free strip rather than covering it; move back slightly. Once a prompt has appeared, loss or subsequent overlap dismisses it without showing it a second time that session. No GitHub, domain, DNS or Pages configuration changes were made.
