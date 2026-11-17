@@ -1,0 +1,35 @@
+{
+  "imageWidth": 1530,
+  "imageHeight": 990,
+  "cardWidthMeters": 0.085,
+  "cardDepthMeters": 0.055,
+  "method": "Measured non-white connected components on the unmodified final back PNG; only scene transforms change.",
+  "Carrie": {
+    "printedBoundsPixels": [
+      326,
+      282,
+      658,
+      985
+    ],
+    "x": -0.015166666666666665,
+    "z": 0.02722222222222222,
+    "y": 0.0001,
+    "height": 0.03905555555555556,
+    "aspectDerivedWidth": 0.0184000337723742,
+    "measuredPrintedWidthMeters": 0.018444444444444447
+  },
+  "Cat": {
+    "printedBoundsPixels": [
+      603,
+      730,
+      864,
+      985
+    ],
+    "x": -0.0017499999999999985,
+    "z": 0.02722222222222222,
+    "y": 0.0001,
+    "height": 0.014166666666666666,
+    "aspectDerivedWidth": 0.014523809523809524,
+    "measuredPrintedWidthMeters": 0.0145
+  }
+}
