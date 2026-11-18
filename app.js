@@ -1,8 +1,8 @@
-import {createPopupScene, CARD} from './popup-ar.js?v=2.1';
+import {createPopupScene, CARD} from './popup-ar.js?v=2.2';
 import {createExperience} from './experience.js?v=2.1';
 const $ = id => document.getElementById(id);
 const video = $('portfolio-video'), start = $('start'), restart = $('restart'), sound = $('sound');
-const TARGETS = './assets/targets.mind?v=2.1';
+const TARGETS = './assets/targets.mind?v=2.2';
 let ar, frontMesh, popup, experience, anchors = [], stream;
 let active = false, desired = false, busy = false, generation = 0, latestFound = 0;
 let queue = Promise.resolve(), frameActive = false, frameDone, hintTimer, lastFrame = 0, newGuidanceSession = true;

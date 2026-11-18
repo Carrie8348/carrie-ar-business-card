@@ -1,149 +1,75 @@
 import * as THREE from 'three';
 
-// Legacy layout inputs are meters: X across, Z toward printed bottom, Y outward.
-// The returned scene uses MindAR target coordinates: X right, Y top, Z outward.
-export const CARD = Object.freeze({ width: 0.085, depth: 0.055, thickness: 0.0006 });
-export const DURATION = 3.2;
-const hingeAxis = new THREE.Vector3(1, 0, 0);
-const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
-const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-function sample(keys, time) {
-  if (time <= keys[0][0]) return keys[0][1];
-  for (let i = 1; i < keys.length; i++) {
-    if (time <= keys[i][0]) {
-      const [a, av] = keys[i - 1], [b, bv] = keys[i];
-      return THREE.MathUtils.lerp(av, bv, ease(clamp((time - a) / (b - a))));
-    }
-  }
-  return keys.at(-1)[1];
-}
+// MindAR: X right, Y printed top, +Z out of the target. Dimensions are meters.
+export const CARD = Object.freeze({width:.085,depth:.055,thickness:.0006});
+export const DURATION = 4.2;
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const smooth=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const progress=(time,start,end)=>smooth(clamp((time-start)/(end-start)));
 
-export async function createPopupScene() {
-  const response = await fetch(new URL('./assets/back-layout.json', import.meta.url));
-  if (!response.ok) throw new Error('Back layout could not load');
-  const layout = await response.json();
-  const group = new THREE.Group();
-  group.name = 'Carrie_Pixel_Popup_AR_V2_1';
-  let restTilt = Math.PI / 4, viewLocked = false, currentTime = 0;
-  const elements = {}, textures = [];
-  const loader = new THREE.TextureLoader();
-  const files = ['carrie', 'cat', 'carrie_accent', 'cat_accent', 'laptop', 'camera', 'design_palette', 'code_window', 'film_strip'];
-  const maps = await Promise.all(files.map(async name => {
-    const texture = await loader.loadAsync(new URL(`./assets/${name}.png`, import.meta.url).href);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
-    texture.generateMipmaps = false;
-    texture.anisotropy = 1;
-    textures.push(texture);
-    return [name, texture];
-  }));
-  const images = Object.fromEntries(maps);
-  function cutout(name, image, height, x, z, y = .00018) {
-    if (layout[name]) { ({height, x, z, y} = layout[name]); }
-    const texture = images[image];
-    const width = height * texture.image.width / texture.image.height;
-    const geometry = new THREE.PlaneGeometry(width, height);
-    // Translate the actual geometry so origin is the bottom edge: a real hinge, not center rotation.
-    geometry.translate(0, height / 2, 0);
-    const material = new THREE.MeshBasicMaterial({
-      map: texture, transparent: true, alphaTest: .035,
-      side: THREE.DoubleSide, depthWrite: true, toneMapped: false
-    });
-    const plane = new THREE.Mesh(geometry, material);
-    plane.name = `${name}_Artwork`;
-    plane.castShadow = false;
-    const pivot = new THREE.Group();
-    pivot.name = `${name}_Bottom_Hinge`;
-    // MindAR anchor: X right, Y printed top, +Z outward. Keep all feet
-    // in the image plane; rotate only the cutout at its own bottom edge.
-    pivot.position.set(x, -z, y);
-    pivot.add(plane); group.add(pivot);
-    const entry = { pivot, plane, material, width, height, final: pivot.position.clone(), image, attached: false };
-    elements[name] = entry;
-    return entry;
+export async function createPopupScene(){
+  const response=await fetch(new URL('./assets/studio-layout.json?v=2.2',import.meta.url));
+  if(!response.ok)throw new Error('Studio registration could not load');
+  const layout=await response.json(),group=new THREE.Group(),elements={},textures=[];
+  group.name='Creative_Studio_Popup_V2_2';
+  const loader=new THREE.TextureLoader();
+  const sources={Studio:'studio.png',Design:'studio_icons/design.png',Code:'studio_icons/code.png',Film:'studio_icons/film.png',Image:'studio_icons/image.png'};
+  const maps=Object.fromEntries(await Promise.all(Object.entries(sources).map(async([name,file])=>{
+    const t=await loader.loadAsync(new URL(`./assets/${file}?v=2.2`,import.meta.url).href);
+    t.colorSpace=THREE.SRGBColorSpace;t.minFilter=t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;t.anisotropy=1;textures.push(t);return[name,t];
+  })));
+  const base=new THREE.Vector3(layout.Studio.x,layout.Studio.y,layout.Studio.z);
+  const iconField=new THREE.Group();iconField.name='Creative_Icons_Depth_Field';iconField.position.copy(base);group.add(iconField);
+  function cutout(name,height,parent,position,offsetX=0){
+    const map=maps[name],width=height*map.image.width/map.image.height;
+    const geometry=new THREE.PlaneGeometry(width,height);geometry.translate(offsetX,height/2,0);
+    const material=new THREE.MeshBasicMaterial({map,transparent:true,alphaTest:.035,side:THREE.DoubleSide,depthWrite:true,toneMapped:false});
+    const plane=new THREE.Mesh(geometry,material);plane.name=`${name}_Original_Pixels`;
+    const pivot=new THREE.Group();pivot.name=`${name}_Bottom_Edge`;pivot.position.copy(position);pivot.add(plane);parent.add(pivot);
+    return elements[name]={plane,pivot,material,width,height,final:position.clone()};
   }
-
-  // Source proportions are preserved; measured printed bounds override these defaults.
-  const pixel = .041 / 329;
-  const carrie = cutout('Carrie', 'carrie', 329 * pixel, -.007, .014);
-  const cat = cutout('Cat', 'cat', 119 * pixel, .012, .019);
-  // Original accent components are attached at their original pixel offsets.
-  function sourceAccent(entry, name, image, characterBounds, accentBounds) {
-    const pixel = entry.height / (characterBounds[3] - characterBounds[1]);
-    const h = (accentBounds[3] - accentBounds[1]) * pixel;
-    const w = (accentBounds[2] - accentBounds[0]) * pixel;
-    const a = cutout(name, image, h, 0, 0, 0);
-    entry.pivot.add(a.pivot);
-    a.pivot.position.set(
-      ((accentBounds[0] + accentBounds[2]) / 2 - (characterBounds[0] + characterBounds[2]) / 2) * pixel,
-      (characterBounds[3] - accentBounds[3]) * pixel,
-      .000015
-    );
-    a.final.copy(a.pivot.position); a.attached = true;
-    return a;
-  }
-  sourceAccent(carrie, 'CarrieAccent', 'carrie_accent', [35, 16, 190, 345], [179, 114, 222, 166]);
-  sourceAccent(cat, 'CatAccent', 'cat_accent', [165, 226, 287, 345], [275, 245, 308, 276]);
-  cutout('Laptop', 'laptop', .015, -.028, -.002);
-  cutout('Camera', 'camera', .0135, .030, -.003);
-  cutout('Design', 'design_palette', .0075, -.030, .013, .0002);
-  cutout('Code', 'code_window', .010, -.011, -.016, .010);
-  cutout('Film', 'film_strip', .009, .026, -.017, .013);
-
-  function setTime(seconds) {
-    const time = clamp(Number.isFinite(seconds) ? seconds : 0, 0, DURATION);
-    currentTime = time;
-    // Flat is 0 in the IMAGE plane. The entrance rises toward +anchor Z.
-    for (const entry of Object.values(elements)) {
-      if (!entry.attached) entry.pivot.quaternion.setFromAxisAngle(hingeAxis, restTilt);
+  const studio=cutout('Studio',layout.Studio.height,group,base,layout.Studio.geometryOffsetX);
+  const icons=[
+    ['Design',.012,new THREE.Vector3(.020,.047,-.003),'left',2.05],
+    ['Code',.011,new THREE.Vector3(.037,.037,.003),'right',2.25],
+    ['Film',.010,new THREE.Vector3(.022,.026,.007),'top',2.45],
+    ['Image',.009,new THREE.Vector3(.040,.019,.011),'bottom',2.65]
+  ];
+  for(const[name,h,p,direction,start]of icons){const e=cutout(name,h,iconField,p);e.direction=direction;e.start=start;}
+  let restTilt=Math.PI/2,viewLocked=false,currentTime=0;
+  function setTime(seconds){
+    const t=clamp(Number.isFinite(seconds)?seconds:0,0,DURATION);currentTime=t;
+    // Geometry starts in the print plane, with its desk bottom fixed throughout.
+    studio.pivot.rotation.x=restTilt*progress(t,.12,1.95);
+    iconField.rotation.x=restTilt;
+    for(const[name]of icons){
+      const e=elements[name],v=progress(t,e.start,e.start+.85);e.pivot.position.copy(e.final);
+      if(e.direction==='left')e.pivot.position.x-=.022*(1-v);
+      if(e.direction==='right')e.pivot.position.x+=.022*(1-v);
+      if(e.direction==='top')e.pivot.position.y+=.018*(1-v);
+      if(e.direction==='bottom')e.pivot.position.y-=.014*(1-v);
+      e.pivot.position.z+=.003*(1-v);
+      e.material.opacity=v;e.pivot.visible=v>0;
     }
-    carrie.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, 0], [.18, 0], [1.30, restTilt + .025], [1.55, restTilt]], time));
-    cat.pivot.quaternion.setFromAxisAngle(hingeAxis, sample([[0, 0], [.50, 0], [1.70, restTilt + .018], [1.95, restTilt]], time));
-    carrie.material.opacity = cat.material.opacity = 1;
-    elements.CarrieAccent.material.opacity = elements.CatAccent.material.opacity = 1;
-    for (const [name, sign, start, arrival, end] of [
-      ['Laptop', -1, 1.50, 2.35, 2.62],
-      ['Camera', 1, 1.72, 2.58, 2.85]
-    ]) {
-      const e = elements[name];
-      e.pivot.position.copy(e.final);
-      e.pivot.position.x = sample([[0, sign * .069], [start, sign * .069], [arrival, e.final.x - sign * .0015], [end, e.final.x]], time);
-      e.material.opacity = sample([[0, 0], [start, 0], [start + .22, 1]], time);
-      e.pivot.visible = e.material.opacity > 0;
-    }
-    for (const [name, start, end, sign] of [['Design', 2.05, 2.62, -1], ['Code', 2.20, 2.91, -1], ['Film', 2.34, 3.10, 1]]) {
-      const e = elements[name];
-      e.pivot.position.copy(e.final);
-      const factor = sample([[0, 0], [start, 0], [end, 1]], time);
-      e.pivot.position.x += sign * .006 * (1 - factor);
-      e.material.opacity = factor;
-      e.pivot.visible = factor > 0;
-    }
-    group.updateMatrixWorld(true);
-    return time;
+    group.updateMatrixWorld(true);return t;
   }
   setTime(0);
-  return {
-    group, elements, duration: DURATION, setTime,
-    resetPresentation() { viewLocked = false; },
-    prepareView(camera, anchor) {
-      if (viewLocked) return;
-      anchor.updateWorldMatrix(true, false);
-      // Express the camera in target coordinates, not world/gravity coordinates.
-      const eye = anchor.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
-      const approach = Math.atan2(-eye.y, Math.max(eye.z, .0001));
-      // An exact 90-degree stand is edge-on for a frontal vertical target.
-      // Set a readable paper lean ONCE per entrance, not a camera-facing billboard.
-      restTilt = THREE.MathUtils.clamp(approach + Math.PI / 4, Math.PI / 9, 5 * Math.PI / 12);
-      viewLocked = true; setTime(currentTime);
+  return{
+    group,elements,duration:DURATION,setTime,
+    resetPresentation(){viewLocked=false;},
+    prepareView(camera,anchor){
+      if(viewLocked)return;
+      anchor.updateWorldMatrix(true,false);
+      const eye=anchor.worldToLocal(camera.getWorldPosition(new THREE.Vector3()));
+      eye.sub(base.clone().multiplyScalar(1/CARD.width));
+      const approach=Math.atan2(-eye.y,Math.max(eye.z,.0001));
+      // A horizontally placed card viewed obliquely stands at 90 degrees.
+      // For a frontal vertical target, a readable outward lean avoids edge-on strips.
+      // Lock ONCE per entrance: lateral motion still reveals actual 3D parallax.
+      restTilt=clamp(approach+Math.PI/3,Math.PI/6,Math.PI/2);
+      viewLocked=true;setTime(currentTime);
     },
-    get restTilt() { return restTilt; },
-
-    dispose() {
-      group.traverse(o => { o.geometry?.dispose(); if (o.material) o.material.dispose(); });
-      textures.forEach(t => t.dispose());
-      group.removeFromParent();
-    }
+    get restTilt(){return restTilt;},
+    dispose(){group.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});textures.forEach(t=>t.dispose());group.removeFromParent();}
   };
 }
