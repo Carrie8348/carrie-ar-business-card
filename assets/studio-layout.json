@@ -1,0 +1,39 @@
+{
+  "targetSize": [
+    1530,
+    990
+  ],
+  "sourceSize": [
+    1536,
+    1024
+  ],
+  "printedDeskBounds": [
+    73,
+    842,
+    1047,
+    899
+  ],
+  "sourceDeskBounds": [
+    122,
+    886,
+    1341,
+    975
+  ],
+  "sourceStudioBounds": [
+    101,
+    147,
+    1341,
+    975
+  ],
+  "sourceToTargetScale": 0.7990155865463495,
+  "pixelPitchMeters": 4.4389754808130534e-05,
+  "Studio": {
+    "x": -0.011388888888888891,
+    "y": -0.022444444444444444,
+    "z": 6e-05,
+    "width": 0.055043295962081865,
+    "height": 0.036754716981132085,
+    "geometryOffsetX": -0.0004660924254853706
+  },
+  "registration": "Desk bottom/width registered to the print. Supplied studio and Canva artwork differ internally; preserve source aspect ratio instead of warping characters."
+}
