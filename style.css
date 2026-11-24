@@ -35,3 +35,17 @@
 @keyframes turn-physical-card{0%,18%{transform:rotateY(0)}82%,100%{transform:rotateY(180deg)}}
 @media(max-height:430px){#flip-prompt{grid-template-columns:68px minmax(0,1fr);padding:10px;column-gap:10px}.flip-illustration{width:68px;height:44px}.flip-card,.flip-card img{width:68px;height:44px}#flip-prompt .flip-arrow{display:none}#flip-prompt strong{font-size:17px}#flip-prompt>span{font-size:13px}#scan-guidance .scan-illustration{width:104px;height:47px;margin-bottom:5px}}
 @media(prefers-reduced-motion:reduce){.scan-phone,.scan-rays,.flip-card,#scan-guidance[data-mode="starting"] strong::before{animation:none!important}.flip-illustration{height:48px;perspective:none}.flip-card,#flip-prompt[data-direction="back-to-front"] .flip-card{display:flex;gap:3px;width:100%;height:auto;transform:none}.flip-card img{position:static;width:calc((100% - 3px)/2);height:auto;aspect-ratio:17 / 11;transform:none}.flip-arrow{margin-top:4px}}
+
+/* V2.5: Creative Studio interaction UI; existing landing/controls remain unchanged. */
+#icon-hint{position:absolute;left:calc(16px + env(safe-area-inset-left));right:calc(16px + env(safe-area-inset-right));max-width:310px;width:auto;margin:0 auto;padding:9px 12px;border:1px solid #e8ddd2;border-radius:20px;background:rgba(255,255,255,.92);color:#51463d;text-align:center;font-size:14px;line-height:1.4;pointer-events:none}
+#icon-dialog{position:fixed;inset:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));margin:auto;width:min(360px,calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));height:fit-content;max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;padding:24px 20px 20px;border:1px solid #e8ddd2;border-radius:18px;background:#fffdfb;color:#27231e;box-shadow:0 8px 40px #00000024;overscroll-behavior:contain}
+#icon-dialog::backdrop{background:rgba(25,21,17,.3)}
+#icon-dialog h2{margin:0 30px 14px 0;font-size:22px;line-height:1.2;letter-spacing:-.025em;font-weight:600}
+#icon-dialog-description{margin:0 0 16px;font-size:15px;line-height:1.5;color:#51463d}
+#icon-dialog-note{margin:0 0 20px;font-size:12px;line-height:1.5;color:#78716c}
+#icon-dialog .icon-close{position:absolute;top:5px;right:5px;display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#51463d;font:inherit;font-size:26px;cursor:pointer}
+.icon-dialog-actions{display:grid;grid-template-columns:1fr 1.5fr;gap:10px}
+#icon-dialog .icon-dialog-actions>*{display:flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:12px 10px;border:1px solid #ddd2c6;border-radius:26px;background:#faf8f5;color:#51483f;font:inherit;font-size:15px;line-height:1.25;text-decoration:none;cursor:pointer;text-align:center}
+#icon-dialog .icon-dialog-actions a{background:#191919;border-color:#191919;color:#fff}
+#icon-access:focus-within{position:absolute;top:calc(70px + env(safe-area-inset-top));left:calc(16px + env(safe-area-inset-left));right:calc(16px + env(safe-area-inset-right));width:auto;height:auto;clip:auto;overflow:visible;white-space:normal;display:flex;flex-wrap:wrap;gap:8px;padding:10px;border-radius:14px;background:#fffdfb}
+#icon-access button{min-height:48px;padding:10px;border:1px solid #ddd2c6;border-radius:20px;background:#faf8f5;color:#51483f;font:inherit;font-size:14px}

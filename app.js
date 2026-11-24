@@ -1,10 +1,13 @@
+import {createIconPicker, createIconUI, createTapGesture} from './icon-interactions.js?v=2.5';
+import {createReturnGuard, cameraUsable} from './ar-return.js?v=2.5';
 import {createCameraUX, promptTop} from './camera-ux.js?v=2.4';
 import {createPopupScene, CARD} from './popup-ar.js?v=2.2';
 import {createExperience} from './experience.js?v=2.1';
 const $ = id => document.getElementById(id);
 const video = $('portfolio-video'), start = $('start'), restart = $('restart'), sound = $('sound');
 const TARGETS = './assets/targets.mind?v=2.2';
-let ar, frontMesh, popup, experience, anchors = [], stream;
+let ar, frontMesh, popup, experience, iconPicker, anchors = [], stream;
+let trackingFrames = 0;
 let active = false, desired = false, busy = false, generation = 0, latestFound = 0;
 let queue = Promise.resolve(), frameActive = false, frameDone, lastFrame = 0, newGuidanceSession = true;
 const message = text => { $('camera-message').textContent = text; };
@@ -12,6 +15,27 @@ const announce = text => { $('tracking-status').textContent = text; };
 const cameraUX = createCameraUX({video, sound, scan:$('scan-guidance'), home:$('home'),
   message:$('camera-message'), controls:document.querySelector('.bottom-controls'), recovery:[$('restart'),$('resume')]});
 const soundLabel = cameraUX.syncSound;
+const iconUI = createIconUI({dialog:$('icon-dialog'),hint:$('icon-hint'),access:$('icon-access'),
+  placeHint:overlay=>placePrompt(overlay)});
+function showResume() {
+  restart.textContent='Resume AR';restart.setAttribute('aria-label','Resume augmented reality camera');restart.hidden=false;
+}
+function returnState() {
+  const camera=ar?.video, track=stream?.getVideoTracks()[0];
+  return {desired,active,busy,hidden:document.hidden,generation,frames:trackingFrames,
+    cameraTime:camera?.currentTime??0,live:track?.readyState==='live',muted:track?.muted??true,
+    videoReady:camera?.readyState>=2 && camera?.srcObject===stream,
+    paused:camera?.paused??true,contextLost:ar?.renderer.getContext().isContextLost()??true,
+    processing:ar?.controller?.processingVideo===true};
+}
+const returnGuard=createReturnGuard({read:returnState,onContinue(){
+  message('');restart.hidden=true;lastFrame=performance.now();cameraUX.ready();syncTargets();soundLabel();
+  if(experience?.side===0 && video.paused)experience.playFront();
+},onNeedsResume(){
+  if(active || busy)suspend('Camera paused. Tap Resume AR to continue.');
+  else {message('Tap Resume AR to continue scanning.');showResume();}
+}});
+
 function cameraUI(on) {
   $('landing').hidden = on; $('camera-ui').hidden = !on;
   document.body.style.overflowY = on ? 'hidden' : 'auto';
@@ -28,8 +52,8 @@ function syncTargets() {
   cameraUX.setTarget(side);
 }
 
-function placePrompt() {
-  const overlay = $('flip-prompt'), canvas = ar.renderer.domElement;
+function placePrompt(overlay = $('flip-prompt')) {
+  const canvas = ar.renderer.domElement;
   const r = canvas.getBoundingClientRect();
   ar.scene.updateMatrixWorld(true); ar.camera.updateMatrixWorld(true);
   let minY = Infinity, maxY = -Infinity;
@@ -44,10 +68,17 @@ function placePrompt() {
   }
   const overlayParent = $('camera-ui').getBoundingClientRect();
   const visibleRecovery = [$('restart'),$('resume')].filter(e=>!e.hidden);
-  const lower = Math.min(document.querySelector('.bottom-controls').getBoundingClientRect().top,
+  let lower = Math.min(document.querySelector('.bottom-controls').getBoundingClientRect().top,
     ...visibleRecovery.map(e=>e.getBoundingClientRect().top)) - 14;
-  const upper = Math.max($('home').getBoundingClientRect().bottom,
+  let upper = Math.max($('home').getBoundingClientRect().bottom,
     $('camera-message').textContent ? $('camera-message').getBoundingClientRect().bottom : 0) + 12;
+  // The new hint may use a different free strip, but never displaces V2.4 flip guidance.
+  if(overlay===$('icon-hint') && !$('flip-prompt').hidden){
+    const flipBounds=$('flip-prompt').getBoundingClientRect();
+    if(flipBounds.bottom<=minY)upper=Math.max(upper,flipBounds.bottom+8);
+    else if(flipBounds.top>=maxY)lower=Math.min(lower,flipBounds.top-8);
+    else return false;
+  }
   const wasHidden=overlay.hidden; overlay.hidden=false;
   const height=overlay.getBoundingClientRect().height; overlay.hidden=wasHidden;
   const top = promptTop({sceneTop:minY, sceneBottom:maxY, upper, lower, height});
@@ -60,7 +91,7 @@ function serial(task) {
   queue = queue.then(task).catch(e => {
     console.error(e); active = false; experience?.setSessionActive(false);cameraUX.pause();
     stream?.getTracks().forEach(t=>t.stop());
-    restart.hidden = false; message('Camera stopped. Tap Restart camera.');
+    iconUI.pause();returnGuard.reset();showResume();message('Camera stopped. Tap Resume AR to continue.');
   });
   return queue;
 }
@@ -76,7 +107,7 @@ function observeFrames(controller) {
   controller.inputLoader.loadInput = (...args) => { frameActive = true; return load(...args); };
   controller.onUpdate = event => {
     update?.(event);
-    if (event.type === 'processDone') { frameActive = false; frameDone?.(); frameDone = undefined; }
+    if (event.type === 'processDone') { trackingFrames++; frameActive = false; frameDone?.(); frameDone = undefined; }
   };
 }
 function discardController() {
@@ -86,7 +117,7 @@ function discardController() {
   c.worker?.terminate(); ar.controller = undefined; frameActive = false; frameDone = undefined;
 }
 async function stopSession(keepStartup = false) {
-  active = false; experience?.setSessionActive(false);
+  active = false; experience?.setSessionActive(false);iconUI.pause();returnGuard.reset();
   if (!keepStartup) cameraUX.pause();
   ar?.renderer.setAnimationLoop(null);
   // Stop capture immediately; an in-flight tracking frame may finish using its already-loaded tensor.
@@ -128,6 +159,7 @@ async function setup() {
   frontMesh.name = 'Front_Portfolio_Video'; frontMesh.visible = false;
   anchors = [ar.addAnchor(0),ar.addAnchor(1)]; anchors[0].group.add(frontMesh);
   popup = backPopup;
+  iconPicker = createIconPicker(popup);
   // Popup positions are already in MindAR target XY / outward Z.
   popup.group.rotation.x = 0;
   popup.group.scale.setScalar(1 / CARD.width);
@@ -138,20 +170,25 @@ async function setup() {
     a.onTargetFound = ()=>{latestFound=index;syncTargets();};
     a.onTargetLost = syncTargets; a.onTargetUpdate = syncTargets;
   });
-  // Retain the working front-side Three.js raycast interaction. UI controls are outside this canvas.
-  const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2(); let down;
+  // One tap handler for both sides. Hit proxies never enter the rendered scene.
+  const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
   const canvas = ar.renderer.domElement;
-  canvas.addEventListener('pointerdown',e=>{down={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now()};});
-  canvas.addEventListener('pointercancel',()=>{down=null;});
-  canvas.addEventListener('pointerup',e=>{
-    const tap=down;down=null;
-    if (!tap || tap.id!==e.pointerId || performance.now()-tap.time>700 || Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>12) return;
-    if (!active || experience.side!==0 || !frontMesh.visible || !anchors[0].group.visible) return;
-    const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
-    ar.scene.updateMatrixWorld(true);ar.camera.updateMatrixWorld(true);raycaster.setFromCamera(pointer,ar.camera);
-    if(raycaster.intersectObject(frontMesh).length) window.open('https://carrieqian.com/','_blank','noopener,noreferrer');
-  });
-  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();if(desired)suspend('Graphics were interrupted. Tap Restart camera.');});
+  const tap = createTapGesture({onTap(x,y){
+    if(!active || !desired || document.hidden || iconUI.open)return;
+    const r=canvas.getBoundingClientRect();
+    ar.scene.updateMatrixWorld(true);ar.camera.updateMatrixWorld(true);
+    if(experience.side===1 && anchors[1].group.visible && experience.backTime>=popup.duration){
+      const name=iconPicker.pick(x,y,ar.camera,r);if(name)iconUI.show(name);return;
+    }
+    if(experience.side!==0 || !frontMesh.visible || !anchors[0].group.visible)return;
+    pointer.set((x-r.left)/r.width*2-1,-(y-r.top)/r.height*2+1);
+    raycaster.setFromCamera(pointer,ar.camera);
+    if(raycaster.intersectObject(frontMesh).length)window.open('https://carrieqian.com/','_blank','noopener,noreferrer');
+  }});
+  canvas.addEventListener('pointerdown',tap.down);
+  canvas.addEventListener('pointercancel',tap.cancel);
+  canvas.addEventListener('pointerup',tap.up);
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();if(desired)suspend('Graphics were interrupted. Tap Resume AR.');});
 }
 async function startSession(token) {
   if (!desired || token!==generation || document.hidden) return;
@@ -167,8 +204,12 @@ async function startSession(token) {
       ar.video=document.createElement('video');ar.video.autoplay=true;ar.video.muted=true;ar.video.playsInline=true;
       ar.video.setAttribute('playsinline','');ar.video.setAttribute('muted','');
       Object.assign(ar.video.style,{position:'absolute',top:'0',left:'0',zIndex:'0'});$('ar').append(ar.video);
+      for(const event of ['pause','error','emptied'])ar.video.addEventListener(event,()=>{
+        const interrupted=event==='pause'?ar.video.paused:event==='error'?!!ar.video.error:ar.video.readyState===0;
+        if(active && desired && !document.hidden && interrupted)suspend('Camera interrupted. Tap Resume AR.');
+      });
       ar.video.addEventListener('resize',()=>{
-        if(active && ar.controller && (ar.video.videoWidth!==ar.controller.inputWidth || ar.video.videoHeight!==ar.controller.inputHeight)) suspend('Camera orientation changed. Tap Restart camera.');
+        if(active && ar.controller && (ar.video.videoWidth!==ar.controller.inputWidth || ar.video.videoHeight!==ar.controller.inputHeight)) suspend('Camera orientation changed. Tap Resume AR.');
       });
     }
     const camera = ar.video;
@@ -187,16 +228,23 @@ async function startSession(token) {
       await ar._startAR(); observeFrames(ar.controller);
     } else { ar.resize();resetAnchors();ar.controller.processVideo(camera); }
     if (!desired || token!==generation || document.hidden) {await stopSession();return;}
-    active=true;experience.setSessionActive(true);restart.hidden=true;lastFrame=performance.now();
+    active=true;experience.setSessionActive(true);restart.hidden=true;restart.textContent='Restart camera';restart.removeAttribute('aria-label');lastFrame=performance.now();
     ar.renderer.setAnimationLoop(()=>{
+      if(document.hidden){lastFrame=performance.now();return;}
       const now=performance.now(),dt=Math.min((now-lastFrame)/1000,.08);lastFrame=now;
       syncTargets();
       if (experience.side === 1) popup.prepareView(ar.camera, anchors[1].group);
-      experience.update(dt);ar.renderer.render(ar.scene,ar.camera);
+      experience.update(dt);
+      iconUI.update(active && desired && experience.side===1 && anchors[1].group.visible &&
+        popup.group.visible && experience.backTime>=popup.duration);
+      ar.renderer.render(ar.scene,ar.camera);
     });
     message(''); cameraUX.ready();
     syncTargets();
-    stream.getVideoTracks().forEach(track=>track.addEventListener('ended',()=>{if(active&&desired)suspend('Camera interrupted. Tap Restart camera.');},{once:true}));
+    stream.getVideoTracks().forEach(track=>{
+      track.addEventListener('ended',()=>{if(active&&desired&&stream===next)suspend('Camera interrupted. Tap Resume AR.');},{once:true});
+      track.addEventListener('mute',()=>{if(active&&desired&&stream===next&&!document.hidden)returnGuard.visible();});
+    });
   } catch(e) {
     console.warn('AR startup:',e?.name||e?.message||e);await stopSession();
     if(token===generation){desired=false;cameraUI(false);$('landing-error').textContent=errorText(e);start.textContent='Try again';}
@@ -207,7 +255,8 @@ function requestStart(freshSession = true) {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.WebGLRenderingContext) {
     $('landing-error').textContent='AR requires HTTPS and a camera-enabled Safari or Chrome browser.';return;
   }
-  if (freshSession) newGuidanceSession = true;
+  returnGuard.reset();
+  if (freshSession) {newGuidanceSession = true;iconUI.beginSession();}
   desired=true;const token=++generation;$('landing-error').textContent='';cameraUI(true);message('');
   cameraUX.starting(freshSession);
   video.muted=true;soundLabel();
@@ -216,15 +265,18 @@ function requestStart(freshSession = true) {
   serial(async()=>{await stopSession(true);await startSession(token);});
 }
 function suspend(text) {
-  ++generation;active=false;experience?.setSessionActive(false);video.pause();
+  ++generation;active=false;experience?.setSessionActive(false);video.pause();iconUI.pause();returnGuard.reset();
   cameraUX.pause();stream?.getTracks().forEach(t=>t.stop());
   ar?.controller?.stopProcessVideo();ar?.renderer.setAnimationLoop(null);
-  message(text);restart.hidden=false;
+  message(text);showResume();
 }
 start.addEventListener('click',()=>requestStart());
-restart.addEventListener('click',()=>{desired=false;requestStart(false);});
+restart.addEventListener('click',()=>{
+  if(cameraUsable(returnState())){returnGuard.visible();return;}
+  desired=false;requestStart(false);
+});
 $('home').addEventListener('click',()=>{
-  desired=false;++generation;active=false;experience?.setSessionActive(false);video.pause();
+  desired=false;++generation;active=false;experience?.setSessionActive(false);video.pause();iconUI.pause();returnGuard.reset();
   cameraUX.pause();stream?.getTracks().forEach(t=>t.stop());
   cameraUI(false);restart.hidden=$('resume').hidden=true;message('');start.textContent='Start AR Experience';
   serial(stopSession);
@@ -234,11 +286,16 @@ video.addEventListener('error',()=>{
   if(active&&experience?.side===0){video.pause();message('The video could not load. Check your connection; the back side and Portfolio link remain available.');}
 });
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden&&desired)suspend('Camera paused. Return here to restart.');
-  else if(desired){message('Tap Restart camera to continue scanning.');restart.hidden=false;}
+  if(!desired)return;
+  if(document.hidden){
+    returnGuard.reset();iconUI.pause();cameraUX.pause();video.pause();
+    // Preserve a healthy stream/controller and the current experience. Safari may keep them live.
+    if(busy || !active)suspend('Camera paused. Tap Resume AR to continue.');
+  }else returnGuard.visible();
 });
-addEventListener('pagehide',()=>{if(desired)suspend('Camera paused. Tap Restart camera.');});
-addEventListener('pageshow',e=>{if(e.persisted&&desired){message('Tap Restart camera to continue scanning.');restart.hidden=false;}});
+// Actual navigation/BFCache is more destructive than a tab switch: require explicit recovery.
+addEventListener('pagehide',()=>{if(desired)suspend('Camera paused. Tap Resume AR.');});
+addEventListener('pageshow',e=>{if(e.persisted&&desired)returnGuard.visible();});
 soundLabel();
 
 addEventListener('resize',()=>cameraUX.layout());
