@@ -49,3 +49,12 @@
 #icon-dialog .icon-dialog-actions a{background:#191919;border-color:#191919;color:#fff}
 #icon-access:focus-within{position:absolute;top:calc(70px + env(safe-area-inset-top));left:calc(16px + env(safe-area-inset-left));right:calc(16px + env(safe-area-inset-right));width:auto;height:auto;clip:auto;overflow:visible;white-space:normal;display:flex;flex-wrap:wrap;gap:8px;padding:10px;border-radius:14px;background:#fffdfb}
 #icon-access button{min-height:48px;padding:10px;border:1px solid #ddd2c6;border-radius:20px;background:#faf8f5;color:#51483f;font:inherit;font-size:14px}
+
+/* Landing-only Instagram link. Out of flow to preserve existing button positions. */
+#landing .welcome{position:relative}
+#landing .landing-instagram{position:absolute;top:100%;left:0;display:inline-flex;align-items:center;justify-content:flex-start;gap:8px;min-width:44px;min-height:44px;max-width:100%;padding:10px 0;color:#6e6660;font:inherit;font-size:14px;line-height:1.4;text-decoration:none;border-radius:4px}
+#landing .landing-instagram svg{width:18px;height:18px;flex:none;stroke-width:1.6}
+#landing .landing-instagram .instagram-dot{fill:currentColor;stroke:none}
+#landing .landing-instagram:hover span,#landing .landing-instagram:focus-visible span{text-decoration:underline;text-underline-offset:3px}
+#landing .landing-instagram span{text-decoration:underline;text-decoration-color:#ddd2c6;text-underline-offset:3px}
+#landing .landing-instagram:hover span,#landing .landing-instagram:focus-visible span{text-decoration-color:currentColor}
