@@ -1,3 +1,4 @@
+import {createCameraUX, promptTop} from './camera-ux.js?v=2.4';
 import {createPopupScene, CARD} from './popup-ar.js?v=2.2';
 import {createExperience} from './experience.js?v=2.1';
 const $ = id => document.getElementById(id);
@@ -5,16 +6,12 @@ const video = $('portfolio-video'), start = $('start'), restart = $('restart'), 
 const TARGETS = './assets/targets.mind?v=2.2';
 let ar, frontMesh, popup, experience, anchors = [], stream;
 let active = false, desired = false, busy = false, generation = 0, latestFound = 0;
-let queue = Promise.resolve(), frameActive = false, frameDone, hintTimer, lastFrame = 0, newGuidanceSession = true;
+let queue = Promise.resolve(), frameActive = false, frameDone, lastFrame = 0, newGuidanceSession = true;
 const message = text => { $('camera-message').textContent = text; };
 const announce = text => { $('tracking-status').textContent = text; };
-function soundLabel() {
-  const label = video.muted ? 'Enable sound' : 'Mute sound';
-  sound.setAttribute('aria-label',label); sound.title = label;
-  sound.setAttribute('aria-pressed',String(!video.muted));
-  sound.querySelector('[data-muted]').hidden = !video.muted;
-  sound.querySelector('[data-audible]').hidden = video.muted;
-}
+const cameraUX = createCameraUX({video, sound, scan:$('scan-guidance'), home:$('home'),
+  message:$('camera-message'), controls:document.querySelector('.bottom-controls'), recovery:[$('restart'),$('resume')]});
+const soundLabel = cameraUX.syncSound;
 function cameraUI(on) {
   $('landing').hidden = on; $('camera-ui').hidden = !on;
   document.body.style.overflowY = on ? 'hidden' : 'auto';
@@ -28,6 +25,7 @@ function syncTargets() {
   const front = anchors[0].group.visible, back = anchors[1].group.visible;
   const side = front && back ? latestFound : back ? 1 : front ? 0 : -1;
   experience.selectSide(side);
+  cameraUX.setTarget(side);
 }
 
 function placePrompt() {
@@ -44,21 +42,23 @@ function placePrompt() {
       minY = Math.min(minY,sy); maxY = Math.max(maxY,sy);
     }
   }
-  const lower = document.querySelector('.bottom-controls').getBoundingClientRect().top - 14;
-  const upper = Math.max($('home').getBoundingClientRect().bottom,$('camera-message').getBoundingClientRect().bottom) + 12;
+  const overlayParent = $('camera-ui').getBoundingClientRect();
+  const visibleRecovery = [$('restart'),$('resume')].filter(e=>!e.hidden);
+  const lower = Math.min(document.querySelector('.bottom-controls').getBoundingClientRect().top,
+    ...visibleRecovery.map(e=>e.getBoundingClientRect().top)) - 14;
+  const upper = Math.max($('home').getBoundingClientRect().bottom,
+    $('camera-message').textContent ? $('camera-message').getBoundingClientRect().bottom : 0) + 12;
   const wasHidden=overlay.hidden; overlay.hidden=false;
   const height=overlay.getBoundingClientRect().height; overlay.hidden=wasHidden;
-  const topSpace=Math.min(lower,minY-12)-upper;
-  const bottomTop=Math.max(upper,maxY+12);
-  const top = topSpace >= height ? upper : lower-bottomTop >= height ? lower-height : null;
+  const top = promptTop({sceneTop:minY, sceneBottom:maxY, upper, lower, height});
   if (top === null || !Number.isFinite(top)) return false;
-  overlay.style.top = `${top}px`;
+  overlay.style.top = `${top - overlayParent.top}px`;
   return true;
 }
 
 function serial(task) {
   queue = queue.then(task).catch(e => {
-    console.error(e); active = false; experience?.setSessionActive(false);
+    console.error(e); active = false; experience?.setSessionActive(false);cameraUX.pause();
     stream?.getTracks().forEach(t=>t.stop());
     restart.hidden = false; message('Camera stopped. Tap Restart camera.');
   });
@@ -85,9 +85,10 @@ function discardController() {
   try { c.dispose(); } catch {}
   c.worker?.terminate(); ar.controller = undefined; frameActive = false; frameDone = undefined;
 }
-async function stopSession() {
+async function stopSession(keepStartup = false) {
   active = false; experience?.setSessionActive(false);
-  clearTimeout(hintTimer); ar?.renderer.setAnimationLoop(null);
+  if (!keepStartup) cameraUX.pause();
+  ar?.renderer.setAnimationLoop(null);
   // Stop capture immediately; an in-flight tracking frame may finish using its already-loaded tensor.
   stream?.getTracks().forEach(t=>t.stop());
   if (ar?.controller) {
@@ -154,7 +155,7 @@ async function setup() {
 }
 async function startSession(token) {
   if (!desired || token!==generation || document.hidden) return;
-  busy=true;start.disabled=restart.disabled=true;message('Preparing your camera…');
+  busy=true;start.disabled=restart.disabled=true;message('');cameraUX.starting();
   try {
     await setup();
     if (newGuidanceSession) { experience.beginSession(); newGuidanceSession = false; }
@@ -193,8 +194,7 @@ async function startSession(token) {
       if (experience.side === 1) popup.prepareView(ar.camera, anchors[1].group);
       experience.update(dt);ar.renderer.render(ar.scene,ar.camera);
     });
-    message('Both sides have a little magic.');
-    clearTimeout(hintTimer);hintTimer=setTimeout(()=>{if(active)message('');},4500);
+    message(''); cameraUX.ready();
     syncTargets();
     stream.getVideoTracks().forEach(track=>track.addEventListener('ended',()=>{if(active&&desired)suspend('Camera interrupted. Tap Restart camera.');},{once:true}));
   } catch(e) {
@@ -208,15 +208,16 @@ function requestStart(freshSession = true) {
     $('landing-error').textContent='AR requires HTTPS and a camera-enabled Safari or Chrome browser.';return;
   }
   if (freshSession) newGuidanceSession = true;
-  desired=true;const token=++generation;$('landing-error').textContent='';cameraUI(true);
+  desired=true;const token=++generation;$('landing-error').textContent='';cameraUI(true);message('');
+  cameraUX.starting(freshSession);
   video.muted=true;soundLabel();
   // Unlock media from the user's Start gesture. It remains paused until the front target is visible.
   video.play().then(()=>{if(!active||experience?.side!==0)video.pause();}).catch(()=>{});
-  serial(async()=>{await stopSession();await startSession(token);});
+  serial(async()=>{await stopSession(true);await startSession(token);});
 }
 function suspend(text) {
   ++generation;active=false;experience?.setSessionActive(false);video.pause();
-  clearTimeout(hintTimer);stream?.getTracks().forEach(t=>t.stop());
+  cameraUX.pause();stream?.getTracks().forEach(t=>t.stop());
   ar?.controller?.stopProcessVideo();ar?.renderer.setAnimationLoop(null);
   message(text);restart.hidden=false;
 }
@@ -224,7 +225,7 @@ start.addEventListener('click',()=>requestStart());
 restart.addEventListener('click',()=>{desired=false;requestStart(false);});
 $('home').addEventListener('click',()=>{
   desired=false;++generation;active=false;experience?.setSessionActive(false);video.pause();
-  clearTimeout(hintTimer);stream?.getTracks().forEach(t=>t.stop());
+  cameraUX.pause();stream?.getTracks().forEach(t=>t.stop());
   cameraUI(false);restart.hidden=$('resume').hidden=true;message('');start.textContent='Start AR Experience';
   serial(stopSession);
 });
@@ -239,3 +240,6 @@ document.addEventListener('visibilitychange',()=>{
 addEventListener('pagehide',()=>{if(desired)suspend('Camera paused. Tap Restart camera.');});
 addEventListener('pageshow',e=>{if(e.persisted&&desired){message('Tap Restart camera to continue scanning.');restart.hidden=false;}});
 soundLabel();
+
+addEventListener('resize',()=>cameraUX.layout());
+window.visualViewport?.addEventListener('resize',()=>cameraUX.layout());
